@@ -31,6 +31,27 @@ npm run dev
 npx remotion render
 ```
 
+**自动化渲染流程**
+
+使用 Python 脚本自动完成整个视频处理流程（查找最新视频 → 转录 → 更新配置 → 渲染 → 重命名）：
+
+```console
+python3 render_video.py
+```
+
+或者：
+
+```console
+./render_video.py
+```
+
+该脚本会自动：
+1. 在 `public` 目录中找到最新的 mp4 文件
+2. 使用 `node sub.mjs` 对视频进行转录
+3. 自动更新 `src/Root.tsx` 中的 `staticFile` 为新视频文件名
+4. 使用 `npx remotion render` 渲染最终视频
+5. 将渲染后的视频重命名为原始文件名（保存在 `out` 目录）
+
 **Upgrade Remotion**
 
 ```console
