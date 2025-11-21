@@ -50,7 +50,7 @@ const getFileExists = (file: string) => {
 // Try out:
 // - 1500 to display a lot of words at a time
 // - 200 to only display 1 word at a time
-const SWITCH_CAPTIONS_EVERY_MS = 1200;
+const SWITCH_CAPTIONS_EVERY_MS = 600;
 
 export const CaptionedVideo: React.FC<{
   src: string;

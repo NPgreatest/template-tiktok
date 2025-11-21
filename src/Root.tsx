@@ -17,7 +17,7 @@ export const RemotionRoot: React.FC = () => {
       width={1080}
       height={1920}
       defaultProps={{
-        src: staticFile("xxxxx.mp4"),
+        src: staticFile("Why Do All Databases Worship the B+ Tree? The Reason Is Wild.mp4"),
       }}
     />
   );

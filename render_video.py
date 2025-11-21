@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """
 自动处理视频渲染流程：
-1. 找到 public 目录中最新的 mp4 文件
+1. 找到 public 目录中唯一的 mp4 文件
 2. 使用 node sub.mjs 进行转录
-3. 更新 Root.tsx 中的 staticFile
-4. 使用 npx remotion render 渲染视频
-5. 将输出文件重命名为原始文件名
+3. 打开 transcript.json 供你人工校对
+4. 弹出 macOS 原生对话框等待你确认
+5. 更新 Root.tsx 中的 staticFile 路径
+6. 使用 npx remotion render 渲染视频
+7. 将输出文件重命名为原始文件名
 """
 
 import os
 import subprocess
 import re
 from pathlib import Path
-from datetime import datetime
 
 # 项目根目录
 PROJECT_ROOT = Path(__file__).parent
@@ -21,73 +22,96 @@ ROOT_TSX = PROJECT_ROOT / "src" / "Root.tsx"
 OUT_DIR = PROJECT_ROOT / "out"
 
 
-def find_newest_mp4():
-    """找到 public 目录中最新的 mp4 文件"""
+def find_single_mp4():
+    """确保 public 中只有 1 个 mp4 文件，并返回它。"""
     mp4_files = list(PUBLIC_DIR.glob("*.mp4"))
-    
+
     if not mp4_files:
-        raise FileNotFoundError("在 public 目录中未找到任何 mp4 文件")
-    
-    # 按修改时间排序，获取最新的
-    newest_file = max(mp4_files, key=lambda f: f.stat().st_mtime)
-    print(f"找到最新的视频文件: {newest_file.name}")
-    return newest_file
+        raise FileNotFoundError("❌ public 目录中没有 mp4 文件")
+
+    if len(mp4_files) > 1:
+        raise RuntimeError(f"❌ public 目录中有多个 mp4 文件（共 {len(mp4_files)} 个），请先清理")
+
+    video = mp4_files[0]
+    print(f"▶ 找到视频文件: {video.name}")
+    return video
 
 
-def transcribe_video(video_path):
-    """使用 node sub.mjs 对视频进行转录"""
-    print(f"开始转录视频: {video_path.name}")
-    
-    # 构建相对于项目根目录的路径
+def transcribe(video_path):
+    """使用 node sub.mjs 进行视频转录，并人工审核"""
+    print(f"▶ 开始转录: {video_path.name}")
+
     relative_path = video_path.relative_to(PROJECT_ROOT)
-    
+
     result = subprocess.run(
         ["node", "sub.mjs", str(relative_path)],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True
     )
-    
+
     if result.returncode != 0:
-        raise RuntimeError(f"转录失败: {result.stderr}")
-    
-    print("转录完成")
-    
-    # 检查 JSON 文件是否已生成
-    json_path = video_path.with_suffix(".json")
+        print(result.stderr)
+        raise RuntimeError("❌ 转录失败")
+
+    # 检查 JSON 文件
+    # 在 public 下查找任意 .json 文件
+    json_candidates = list(video_path.parent.glob(f"{video_path.stem}*.json"))
+    if not json_candidates:
+        raise FileNotFoundError("❌ 找不到生成的 transcript JSON")
+
+    json_path = json_candidates[0]
     if not json_path.exists():
-        raise FileNotFoundError(f"转录 JSON 文件未生成: {json_path}")
+        raise FileNotFoundError(f"❌ 转录 JSON 未生成: {json_path}")
+
+    print("✔ 转录完成")
+
+    # ---------------------------------------------------------
+    # ⭐⭐ 新增部分：打开 transcript.json 并等待人工审核 ⭐⭐
+    # ---------------------------------------------------------
+
+    print("✏️ 打开 transcript.json 供你人工修改...")
+    subprocess.run(["open", str(PUBLIC_DIR)])
+
+    # macOS 原生弹窗：等你点“继续”后再继续执行
+    os.system(r'''
+    osascript <<EOF
+    display dialog "请检查并修改 transcript.json\n\n修改完请点击「继续」开始渲染" buttons {"继续"} default button "继续"
+    EOF
+    ''')
+    # ---------------------------------------------------------
+
+    print("✔ 已确认继续渲染")
 
 
-def update_root_tsx(video_filename):
-    """更新 Root.tsx 中的 staticFile"""
-    print(f"更新 Root.tsx 中的 staticFile 为: {video_filename}")
-    
+def update_root(video_filename):
+    """精准更新 Root.tsx 中 staticFile 的路径"""
+    print(f"▶ 更新 Root.tsx staticFile → {video_filename}")
+
     content = ROOT_TSX.read_text(encoding="utf-8")
-    
-    # 使用正则表达式匹配 staticFile 中的文件名
-    pattern = r'staticFile\("([^"]+)"\)'
-    
-    def replace_filename(match):
-        return f'staticFile("{video_filename}")'
-    
-    new_content = re.sub(pattern, replace_filename, content)
-    
-    if new_content == content:
-        raise ValueError(f"未找到 staticFile 调用，无法更新")
-    
+
+    pattern = r'src:\s*staticFile\(\s*["\'`](.+?)["\'`]\s*\)'
+    if not re.search(pattern, content):
+        raise RuntimeError("❌ Root.tsx 中未找到 staticFile(...)")
+
+    new_content = re.sub(
+        pattern,
+        f'src: staticFile("{video_filename}")',
+        content
+    )
+
     ROOT_TSX.write_text(new_content, encoding="utf-8")
-    print("Root.tsx 已更新")
+    print("✔ Root.tsx 已更新")
 
 
 def render_video():
-    """使用 npx remotion render 渲染视频"""
-    print("开始渲染视频...")
-    
-    # Remotion 渲染命令
-    # 格式: npx remotion render <entry-file> <composition-id> <output-file>
+    print("▶ 开始渲染视频...")
+
     output_file = OUT_DIR / "CaptionedVideo.mp4"
-    
+
+    if output_file.exists():
+        output_file.unlink()
+
     result = subprocess.run(
         [
             "npx", "remotion", "render",
@@ -96,67 +120,54 @@ def render_video():
             str(output_file)
         ],
         cwd=PROJECT_ROOT,
-        capture_output=False  # 显示输出以便查看进度
+        stdout=subprocess.DEVNULL,      # 不显示 stdout
+        stderr=subprocess.DEVNULL       # 不显示 stderr
     )
-    
+
     if result.returncode != 0:
-        raise RuntimeError(f"视频渲染失败，退出码: {result.returncode}")
-    
-    print(f"视频渲染完成: {output_file}")
+        raise RuntimeError("❌ 渲染失败")
+
+    print(f"✔ 渲染完成: {output_file}")
     return output_file
 
 
+
 def rename_output(output_file, original_filename):
-    """将输出文件重命名为原始文件名"""
-    # 直接使用原始文件名
-    new_path = OUT_DIR / original_filename
-    
-    if output_file.exists():
-        # 如果目标文件已存在，先删除
-        if new_path.exists():
-            new_path.unlink()
-        output_file.rename(new_path)
-        print(f"输出文件已重命名为: {original_filename}")
-        return new_path
-    else:
-        raise FileNotFoundError(f"输出文件不存在: {output_file}")
+    """将渲染结果重命名为原视频的文件名"""
+    final_path = OUT_DIR / original_filename
+
+    if final_path.exists():
+        final_path.unlink()
+
+    output_file.rename(final_path)
+    print(f"✔ 视频已重命名为: {final_path}")
+    return final_path
 
 
 def main():
-    """主函数"""
     try:
         print("=" * 60)
-        print("开始自动视频渲染流程")
+        print("🚀 开始自动渲染流程")
         print("=" * 60)
-        
-        # 1. 找到最新的 mp4 文件
-        video_file = find_newest_mp4()
+
+        video_file = find_single_mp4()
         original_filename = video_file.name
-        
-        # 2. 转录视频
-        transcribe_video(video_file)
-        
-        # 3. 更新 Root.tsx
-        update_root_tsx(original_filename)
-        
-        # 4. 渲染视频
-        output_file = render_video()
-        
-        # 5. 重命名输出文件
-        final_file = rename_output(output_file, original_filename)
-        
+
+        transcribe(video_file)        # ← 已带人工审核
+        update_root(original_filename)
+        output = render_video()
+        final = rename_output(output, original_filename)
+
         print("=" * 60)
-        print("流程完成！")
-        print(f"最终输出文件: {final_file}")
+        print(f"🎉 完成！输出文件：{final}")
         print("=" * 60)
-        
+
     except Exception as e:
-        print(f"错误: {e}")
+        print(e)
         return 1
-    
+
     return 0
 
 
 if __name__ == "__main__":
     exit(main())
-
