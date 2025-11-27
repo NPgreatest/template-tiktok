@@ -1,14 +1,10 @@
 import React from "react";
-import {
-  AbsoluteFill,
-  interpolate,
-  useCurrentFrame,
-  useVideoConfig,
-} from "remotion";
-import { TheBoldFont } from "../load-font";
+import { AbsoluteFill, interpolate, useVideoConfig } from "remotion";
+import { TheBoldFont } from "../../load-font";
 import { fitText } from "@remotion/layout-utils";
 import { makeTransform, scale, translateY } from "@remotion/animation-utils";
-import { TikTokPage } from "@remotion/captions";
+import type { SubtitleTemplate } from "../SubtitlePage";
+import { getHighlightedTokenIndex } from "./helpers";
 
 const fontFamily = TheBoldFont;
 
@@ -21,14 +17,12 @@ const container: React.CSSProperties = {
 const DESIRED_FONT_SIZE = 120;
 const HIGHLIGHT_COLOR = "#39E508";
 
-export const Page: React.FC<{
-  readonly enterProgress: number;
-  readonly page: TikTokPage;
-}> = ({ enterProgress, page }) => {
-  const frame = useCurrentFrame();
-  const { width, fps } = useVideoConfig();
-  const timeInMs = (frame / fps) * 1000;
-
+export const TikTokPageView: SubtitleTemplate = ({
+  enterProgress,
+  page,
+  timeInMs,
+}) => {
+  const { width } = useVideoConfig();
   const fittedText = fitText({
     fontFamily,
     text: page.text,
@@ -37,6 +31,10 @@ export const Page: React.FC<{
   });
 
   const fontSize = Math.min(DESIRED_FONT_SIZE, fittedText.fontSize);
+  const highlightedTokenIndex = getHighlightedTokenIndex({
+    page,
+    timeInMs,
+  });
 
   return (
     <AbsoluteFill style={container}>
@@ -62,13 +60,8 @@ export const Page: React.FC<{
             ]),
           }}
         >
-          {page.tokens.map((t) => {
-            const startRelativeToSequence = t.fromMs - page.startMs;
-            const endRelativeToSequence = t.toMs - page.startMs;
-
-            const active =
-              startRelativeToSequence <= timeInMs &&
-              endRelativeToSequence > timeInMs;
+          {page.tokens.map((t, index) => {
+            const active = highlightedTokenIndex === index;
 
             return (
               <span

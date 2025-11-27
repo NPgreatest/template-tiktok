@@ -1,18 +1,29 @@
-import React from "react";
-import {
-  AbsoluteFill,
-  spring,
-  useCurrentFrame,
-  useVideoConfig,
-} from "remotion";
-import { Page } from "./Page";
+import React, { ReactNode, useMemo } from "react";
+import { AbsoluteFill, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { TikTokPage } from "@remotion/captions";
+import { TikTokPageView } from "./templates/TikTokPageView";
+import { BottomKaraokeView } from "./templates/BottomKaraokeView";
 
-const SubtitlePage: React.FC<{ readonly page: TikTokPage }> = ({ page }) => {
+export type SubtitleTemplate = (opts: {
+  page: TikTokPage;
+  timeInMs: number;
+  enterProgress: number;
+}) => ReactNode;
+
+const templates: Record<"tiktok" | "bottom_karaoke", SubtitleTemplate> = {
+  tiktok: TikTokPageView,
+  bottom_karaoke: BottomKaraokeView,
+};
+
+const SubtitlePage: React.FC<{
+  readonly page: TikTokPage;
+  readonly template: "tiktok" | "bottom_karaoke";
+}> = ({ page, template }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
+  const timeInMs = (frame / fps) * 1000;
 
-  const enter = spring({
+  const enterProgress = spring({
     frame,
     fps,
     config: {
@@ -21,9 +32,11 @@ const SubtitlePage: React.FC<{ readonly page: TikTokPage }> = ({ page }) => {
     durationInFrames: 5,
   });
 
+  const Template = useMemo(() => templates[template] ?? templates.tiktok, [template]);
+
   return (
     <AbsoluteFill>
-      <Page enterProgress={enter} page={page} />
+      <Template enterProgress={enterProgress} page={page} timeInMs={timeInMs} />
     </AbsoluteFill>
   );
 };

@@ -35,4 +35,4 @@ export const WHISPER_MODEL = "large-v3";
 /**
  * @type {import('@remotion/install-whisper-cpp').Language}
  */
-export const WHISPER_LANG = "zh";
+export const WHISPER_LANG = "en";
