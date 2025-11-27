@@ -24,6 +24,7 @@ export type SubtitleProp = {
 
 export const captionedVideoSchema = z.object({
   src: z.string(),
+  template: z.enum(["tiktok", "bottom_karaoke"]).default("tiktok"),
 });
 
 export const calculateCaptionedVideoMetadata: CalculateMetadataFunction<
@@ -54,7 +55,8 @@ const SWITCH_CAPTIONS_EVERY_MS = 600;
 
 export const CaptionedVideo: React.FC<{
   src: string;
-}> = ({ src }) => {
+  template: "tiktok" | "bottom_karaoke";
+}> = ({ src, template = "tiktok" }) => {
   const [subtitles, setSubtitles] = useState<Caption[]>([]);
   const { delayRender, continueRender } = useDelayRender();
   const [handle] = useState(() => delayRender());
@@ -125,7 +127,7 @@ export const CaptionedVideo: React.FC<{
             from={subtitleStartFrame}
             durationInFrames={durationInFrames}
           >
-            <SubtitlePage key={index} page={page} />;
+            <SubtitlePage key={index} page={page} template={template} />
           </Sequence>
         );
       })}

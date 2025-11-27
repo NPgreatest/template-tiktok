@@ -10,9 +10,12 @@
 7. 将输出文件重命名为原始文件名
 """
 
+import argparse
 import os
-import subprocess
 import re
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 # 项目根目录
@@ -20,6 +23,44 @@ PROJECT_ROOT = Path(__file__).parent
 PUBLIC_DIR = PROJECT_ROOT / "public"
 ROOT_TSX = PROJECT_ROOT / "src" / "Root.tsx"
 OUT_DIR = PROJECT_ROOT / "out"
+ALLOWED_TEMPLATES = {"tiktok", "bottom_karaoke"}
+
+
+def sanitize_filename(name: str) -> str:
+    """Make a transcription-safe filename (for whisper on Windows)."""
+    name = name.replace("\u00a0", " ")
+    safe = []
+    for ch in name:
+        if re.match(r"[A-Za-z0-9._\\-\\s]", ch):
+            safe.append(ch)
+        else:
+            safe.append("_")
+    sanitized = re.sub(r"[\\s]+", " ", "".join(safe)).strip()
+    sanitized = re.sub(r"_+", "_", sanitized)
+    return sanitized or "video.mp4"
+
+
+def ensure_legal_video_name(video_path: Path) -> Path:
+    """Rename the video to a sanitized filename (no copies)."""
+    sanitized_name = sanitize_filename(video_path.name)
+    if sanitized_name == video_path.name:
+        return video_path
+
+    sanitized_path = video_path.with_name(sanitized_name)
+    if sanitized_path.exists():
+        sanitized_path.unlink()
+
+    # 如果已有旧的字幕 JSON，重命名保持同步
+    old_json = video_path.with_suffix(".json")
+    new_json = sanitized_path.with_suffix(".json")
+    if old_json.exists():
+        if new_json.exists():
+            new_json.unlink()
+        old_json.rename(new_json)
+
+    video_path.rename(sanitized_path)
+    print(f"ℹ️  已重命名文件: {video_path.name} → {sanitized_path.name}")
+    return sanitized_path
 
 
 def find_single_mp4():
@@ -41,7 +82,8 @@ def transcribe(video_path):
     """使用 node sub.mjs 进行视频转录，并人工审核"""
     print(f"▶ 开始转录: {video_path.name}")
 
-    relative_path = video_path.relative_to(PROJECT_ROOT)
+    # 使用 POSIX 风格路径避免 Windows 反斜杠导致的转义问题
+    relative_path = video_path.relative_to(PROJECT_ROOT).as_posix()
 
     result = subprocess.run(
         ["node", "sub.mjs", str(relative_path)],
@@ -55,12 +97,14 @@ def transcribe(video_path):
         raise RuntimeError("❌ 转录失败")
 
     # 检查 JSON 文件
-    # 在 public 下查找任意 .json 文件
-    json_candidates = list(video_path.parent.glob(f"{video_path.stem}*.json"))
-    if not json_candidates:
-        raise FileNotFoundError("❌ 找不到生成的 transcript JSON")
-
-    json_path = json_candidates[0]
+    # 优先使用转录输入同名的 json
+    json_path = video_path.with_suffix(".json")
+    if not json_path.exists():
+        # 在 public 下查找任意 .json 文件
+        json_candidates = list(video_path.parent.glob(f"{video_path.stem}*.json"))
+        if not json_candidates:
+            raise FileNotFoundError("❌ 找不到生成的 transcript JSON")
+        json_path = json_candidates[0]
     if not json_path.exists():
         raise FileNotFoundError(f"❌ 转录 JSON 未生成: {json_path}")
 
@@ -71,33 +115,63 @@ def transcribe(video_path):
     # ---------------------------------------------------------
 
     print("✏️ 打开 transcript.json 供你人工修改...")
-    subprocess.run(["open", str(PUBLIC_DIR)])
+    opener = None
+    if sys.platform.startswith("darwin"):
+        opener = ["open", str(PUBLIC_DIR)]
+    elif os.name == "nt":
+        opener = ["explorer", str(PUBLIC_DIR)]
+    else:
+        opener = ["xdg-open", str(PUBLIC_DIR)]
 
-    # macOS 原生弹窗：等你点“继续”后再继续执行
-    os.system(r'''
-    osascript <<EOF
-    display dialog "请检查并修改 transcript.json\n\n修改完请点击「继续」开始渲染" buttons {"继续"} default button "继续"
-    EOF
-    ''')
+    try:
+        subprocess.run(opener, check=False)
+    except FileNotFoundError:
+        print("⚠️ 无法自动打开目录，请手动检查 public 下的字幕 JSON")
+
+    if sys.platform.startswith("darwin"):
+        os.system(
+            r'''
+        osascript <<EOF
+        display dialog "请检查并修改 transcript.json\n\n修改完请点击「继续」开始渲染" buttons {"继续"} default button "继续"
+        EOF
+        '''
+        )
+    else:
+        input("请检查并修改 transcript.json，完成后按回车继续渲染...")
     # ---------------------------------------------------------
 
     print("✔ 已确认继续渲染")
 
+    # 无需清理副本，因为已直接重命名原文件
 
-def update_root(video_filename):
-    """精准更新 Root.tsx 中 staticFile 的路径"""
-    print(f"▶ 更新 Root.tsx staticFile → {video_filename}")
+
+def update_root(video_filename, template):
+    """精准更新 Root.tsx 中 staticFile 的路径和模板"""
+    print(f"▶ 更新 Root.tsx staticFile → {video_filename}, template → {template}")
 
     content = ROOT_TSX.read_text(encoding="utf-8")
 
-    pattern = r'src:\s*staticFile\(\s*["\'`](.+?)["\'`]\s*\)'
-    if not re.search(pattern, content):
-        raise RuntimeError("❌ Root.tsx 中未找到 staticFile(...)")
+    pattern = re.compile(
+        r"src:\s*staticFile\(\s*['\"`](.+?)['\"`]\s*,?\s*\)",
+        re.DOTALL,
+    )
+    match = pattern.search(content)
+    if not match:
+        raise RuntimeError("❌ Root.tsx 中未找到 staticFile(...)，请确认 defaultProps.src 存在")
+
+    new_content = pattern.sub(f'src: staticFile("{video_filename}")', content)
+
+    template_pattern = re.compile(
+        r'template:\s*["\'`](.+?)["\'`]\s*,?',
+        re.DOTALL,
+    )
+    if not re.search(template_pattern, new_content):
+        raise RuntimeError("❌ Root.tsx 中未找到 template: \"...\"")
 
     new_content = re.sub(
-        pattern,
-        f'src: staticFile("{video_filename}")',
-        content
+        template_pattern,
+        f'template: "{template}"',
+        new_content
     )
 
     ROOT_TSX.write_text(new_content, encoding="utf-8")
@@ -112,13 +186,24 @@ def render_video():
     if output_file.exists():
         output_file.unlink()
 
+    if not OUT_DIR.exists():
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    npx_cmd = shutil.which("npx.cmd") if os.name == "nt" else shutil.which("npx")
+    if not npx_cmd:
+        raise FileNotFoundError("❌ 未找到 npx，请确认已安装 Node.js/npm 并在 PATH 中")
+
+    cmd = [
+        npx_cmd,
+        "remotion",
+        "render",
+        "src/index.ts",
+        "CaptionedVideo",
+        str(output_file),
+    ]
+
     result = subprocess.run(
-        [
-            "npx", "remotion", "render",
-            "src/index.ts",
-            "CaptionedVideo",
-            str(output_file)
-        ],
+        cmd,
         cwd=PROJECT_ROOT,
         stdout=subprocess.DEVNULL,      # 不显示 stdout
         stderr=subprocess.DEVNULL       # 不显示 stderr
@@ -145,16 +230,42 @@ def rename_output(output_file, original_filename):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="自动转录并渲染 Remotion 视频")
+    parser.add_argument(
+        "--template",
+        default="tiktok",
+        choices=sorted(ALLOWED_TEMPLATES),
+        help="选择字幕模板",
+    )
+    parser.add_argument(
+        "--skip-transcribe",
+        action="store_true",
+        help="跳过转录（要求 public 下已存在对应 JSON）",
+    )
+    args = parser.parse_args()
+    template = args.template
+
     try:
         print("=" * 60)
         print("🚀 开始自动渲染流程")
         print("=" * 60)
 
         video_file = find_single_mp4()
+        video_file = ensure_legal_video_name(video_file)
         original_filename = video_file.name
 
-        transcribe(video_file)        # ← 已带人工审核
-        update_root(original_filename)
+        subtitles_json = video_file.with_suffix(".json")
+        should_skip = subtitles_json.exists() or args.skip_transcribe
+        if should_skip and subtitles_json.exists():
+            print("⏭ 检测到同名字幕 JSON，自动跳过转录")
+        elif args.skip_transcribe:
+            print("⏭ 跳过转录")
+            if not subtitles_json.exists():
+                raise FileNotFoundError("❌ 需要先生成字幕 JSON，未找到对应文件")
+        else:
+            transcribe(video_file)        # ← 已带人工审核
+
+        update_root(original_filename, template)
         output = render_video()
         final = rename_output(output, original_filename)
 

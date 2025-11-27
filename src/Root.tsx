@@ -17,8 +17,8 @@ export const RemotionRoot: React.FC = () => {
       width={1080}
       height={1920}
       defaultProps={{
-        src: staticFile("Why Do All Databases Worship the B+ Tree? The Reason Is Wild.mp4"),
-      }}
+        src: staticFile("The_2_000_Year_Old_Machine_That_Should_Not_Exi_t_The_Antikythera_mechani_m.mp4"),
+        template: "bottom_karaoke"}}
     />
   );
 };
