@@ -65,20 +65,30 @@ export const BottomKaraokeView: SubtitleTemplate = ({
           {page.tokens.map((token, index) => {
             const active = highlightedTokenIndex === index;
             return (
-              <span
-                key={token.fromMs}
-                style={{
-                  display: "inline",
-                  whiteSpace: "pre-wrap",
-                  color: active ? HIGHLIGHT_COLOR : "white",
-                  transition: "color 120ms linear, text-shadow 120ms linear",
-                  textShadow: active
-                    ? "0 0 12px rgba(0, 229, 255, 0.7)"
-                    : "0 0 6px rgba(0, 0, 0, 0.45)",
-                }}
-              >
-                {token.text}
-              </span>
+                <span
+                  key={token.fromMs}
+                  style={{
+                    display: "inline",
+                    whiteSpace: "pre-wrap",
+                    color: active ? HIGHLIGHT_COLOR : "white",
+                    transition: "color 120ms linear, text-shadow 120ms linear",
+
+                    // === 关键修复：完全禁止奇怪的横线 ===
+                    textDecoration: "none",
+                        WebkitTextDecorationSkip: "none",
+                        textDecorationSkipInk: "none",
+
+                        // 如果你想更干净，也可以禁用光滑笔画（可选）
+                        WebkitFontSmoothing: "antialiased",
+
+                    textShadow: active
+                      ? "0 0 12px rgba(0, 229, 255, 0.7)"
+                      : "0 0 6px rgba(0, 0, 0, 0.45)",
+                  }}
+                >
+                  {token.text}
+                </span>
+
             );
           })}
         </div>

@@ -17,8 +17,8 @@ export const RemotionRoot: React.FC = () => {
       width={1080}
       height={1920}
       defaultProps={{
-        src: staticFile("The_2_000_Year_Old_Machine_That_Should_Not_Exi_t_The_Antikythera_mechani_m.mp4"),
-        template: "bottom_karaoke"}}
+        src: staticFile("en-wikipedia-org-wiki-christ-the-redeemer-statue-20251227-180536.mp4"),
+        template: "tiktok_story"}}
     />
   );
 };

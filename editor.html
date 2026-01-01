@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Whisper CPP Timeline Editor (Multi-row)</title>
+<style>
+    body { font-family: Arial; margin: 20px; }
+    #timelineWrapper {
+        width: 100%;
+        overflow-x: scroll;
+        border: 1px solid #ccc;
+        background: #f8f8f8;
+        white-space: nowrap;
+        padding: 10px 0;
+    }
+    .row {
+        position: relative;
+        height: 40px;
+        margin-bottom: 10px;
+    }
+    .word {
+        position: absolute;
+        top: 5px;
+        padding: 4px 6px;
+        border-radius: 4px;
+        background: #e3e3e3;
+        border: 1px solid #999;
+        cursor: pointer;
+        font-size: 14px;
+    }
+    #editorPanel {
+        margin-top: 20px;
+        padding: 15px;
+        background: #fff;
+        border: 1px solid #ddd;
+        width: 350px;
+        display: none;
+    }
+    label { display:block;margin-top:10px; }
+    input { width: 100%; padding: 5px; margin-top: 3px; }
+    button { margin-top: 10px; padding: 8px 12px; }
+</style>
+</head>
+<body>
+
+<h2>Whisper CPP Timeline Editor (Multi-Line)</h2>
+
+<input type="file" id="fileInput" accept=".json">
+
+<div id="timelineWrapper">
+    <div id="timeline"></div>
+</div>
+
+<div id="editorPanel">
+    <h3>Edit Word</h3>
+
+    <label>Text</label>
+    <input id="editText">
+
+    <label>Start (ms)</label>
+    <input id="editStart">
+
+    <label>End (ms)</label>
+    <input id="editEnd">
+
+    <label>Confidence</label>
+    <input id="editConf">
+
+    <button id="saveBtn">Save</button>
+    <button id="deleteBtn" style="background:#f33;color:#fff;">Delete</button>
+</div>
+
+<script>
+let words = [];
+let selectedIndex = null;
+
+// =========================
+// Load JSON
+// =========================
+document.getElementById("fileInput").onchange = e => {
+    const reader = new FileReader();
+    reader.onload = evt => {
+        words = JSON.parse(evt.target.result);
+        renderTimeline();
+    };
+    reader.readAsText(e.target.files[0]);
+};
+
+// =========================
+// Multi-line timeline packer
+// =========================
+function packIntoRows(words) {
+    let rows = [];
+
+    words.forEach(w => {
+        let placed = false;
+
+        // Try each row
+        for (let r of rows) {
+            let last = r[r.length - 1];
+            if (!last || last.endMs <= w.startMs) {
+                r.push(w);
+                placed = true;
+                break;
+            }
+        }
+
+        // No row fits → create new row
+        if (!placed) rows.push([w]);
+    });
+
+    return rows;
+}
+
+// =========================
+// Render timeline
+// =========================
+function renderTimeline() {
+    const timeline = document.getElementById("timeline");
+    timeline.innerHTML = "";
+
+    if (words.length === 0) return;
+
+    const maxEnd = Math.max(...words.map(w => w.endMs));
+    const scale = 0.3;
+
+    timeline.style.position = "relative";
+    timeline.style.width = (maxEnd * scale + 300) + "px";
+
+    const rows = packIntoRows(words);
+
+    rows.forEach((rowWords, rowIndex) => {
+        const rowDiv = document.createElement("div");
+        rowDiv.className = "row";
+
+        rowWords.forEach((w, i) => {
+            const block = document.createElement("div");
+            block.className = "word";
+            block.textContent = w.text;
+
+            block.style.left = (w.startMs * scale) + "px";
+            block.style.width = Math.max((w.endMs - w.startMs) * scale, 20) + "px";
+
+            block.onclick = () => openEditor(words.indexOf(w));
+
+            rowDiv.appendChild(block);
+        });
+
+        timeline.appendChild(rowDiv);
+    });
+}
+
+// =========================
+// Editor panel
+// =========================
+function openEditor(index) {
+    selectedIndex = index;
+    const w = words[index];
+
+    document.getElementById("editText").value = w.text;
+    document.getElementById("editStart").value = w.startMs;
+    document.getElementById("editEnd").value = w.endMs;
+    document.getElementById("editConf").value = w.confidence;
+
+    document.getElementById("editorPanel").style.display = "block";
+}
+
+document.getElementById("saveBtn").onclick = () => {
+    if (selectedIndex == null) return;
+    const w = words[selectedIndex];
+
+    w.text = document.getElementById("editText").value;
+    w.startMs = parseInt(document.getElementById("editStart").value);
+    w.endMs = parseInt(document.getElementById("editEnd").value);
+    w.confidence = parseFloat(document.getElementById("editConf").value);
+
+    renderTimeline();
+};
+
+document.getElementById("deleteBtn").onclick = () => {
+    if (selectedIndex == null) return;
+    words.splice(selectedIndex, 1);
+    selectedIndex = null;
+
+    document.getElementById("editorPanel").style.display = "none";
+    renderTimeline();
+};
+</script>
+
+</body>
+</html>

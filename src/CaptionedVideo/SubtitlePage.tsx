@@ -3,6 +3,7 @@ import { AbsoluteFill, spring, useCurrentFrame, useVideoConfig } from "remotion"
 import { TikTokPage } from "@remotion/captions";
 import { TikTokPageView } from "./templates/TikTokPageView";
 import { BottomKaraokeView } from "./templates/BottomKaraokeView";
+import { TikTokStoryPageView } from "./templates/TikTokStoryPageView";
 
 export type SubtitleTemplate = (opts: {
   page: TikTokPage;
@@ -10,9 +11,10 @@ export type SubtitleTemplate = (opts: {
   enterProgress: number;
 }) => ReactNode;
 
-const templates: Record<"tiktok" | "bottom_karaoke", SubtitleTemplate> = {
+const templates: Record<"tiktok" | "bottom_karaoke" | "tiktok_story", SubtitleTemplate> = {
   tiktok: TikTokPageView,
   bottom_karaoke: BottomKaraokeView,
+  tiktok_story: TikTokStoryPageView
 };
 
 const SubtitlePage: React.FC<{
